@@ -1,6 +1,6 @@
 # c-embed
 
-naturally embed read-only files/filesystems into any c++11 program w. a single header, zero dependencies and zero modifications to your code.
+naturally embed read-only files/filesystems into any C++11 program w. a single header, zero dependencies and zero modifications to your code.
 
 ## Usage
 
