@@ -142,9 +142,7 @@ EFILE* eopen(const char* file, const char* mode){
 
 // Actual File Useage
 
-void fclose(EFILE* stream){
-  delete stream;
-}
+void fclose(EFILE* stream){}
 
 bool feof(EFILE* stream){
   if(stream == NULL) return false;
@@ -172,6 +170,39 @@ char* fgets ( char* str, int num, EFILE* stream ){
     str[i] = *(stream->pos++);
 
   return str;
+
+}
+
+#define CEMBED_GETLINE_NBUFCHUNK 128
+
+size_t getline ( char** line, size_t* n, EFILE*& stream ){
+
+  if(stream == NULL)
+    return -1;
+
+  if(feof(stream))
+    return -1;
+
+  *n = CEMBED_GETLINE_NBUFCHUNK;
+  *line = (char*)malloc(CEMBED_GETLINE_NBUFCHUNK);
+
+  size_t i = 0;
+  while(!feof(stream)){
+    (*line)[i++] = *(stream->pos);
+    if(i > *n){
+      *n += CEMBED_GETLINE_NBUFCHUNK;
+      *line = (char*)realloc(*line, *n);
+    }
+    if(*(stream->pos) == '\n'){
+      stream->pos++;
+      break;
+    }
+    stream->pos++;
+  }
+
+  *line = (char*)realloc(*line, i);
+  *n = i;
+  return i;
 
 }
 
