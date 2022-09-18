@@ -152,12 +152,6 @@ The result is that `c-embed` does not strictly require that the file system itse
 
 Files stay as the files which they are, and can thus be manipulated appropriately by your editor of choice, with the embedding occuring at build time.
 
-### Limitations
-
-Because `c-embed` uses the preprocessor to expand the `-Dcembed=...` macro into symbols and map them for access, we are limited by the lack of preprocess macro-iteration and therefore can only embed as many files as we are willing to copy and paste lines in `c-embed.h`. Currently I have 16 embeddable files. See below for a potential long-term fix.
-
-Additionally, because filesystem accesor tokens `/` and `.` are not valid identifier tokens in C/C++, they must be converted, in this case to underscores `_`. Therefore, embedding files with ambiguous (for C/C++) names like `data_txt,data.txt` will result in undefined behavior and should be avoided. This is potentially also fixable (see below).
-
 ## Future Work
 
 It would be interesting to consider if the file system could be made (temporarily) writeable in RAM. But this is beyond the purpose of this library.
