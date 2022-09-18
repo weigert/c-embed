@@ -1,214 +1,163 @@
 /*
-  cembed - embed files into a c++ program
-  zero dependencies, zero clutter in your program
-  Author: Nicholas McDonald, 2022
+# c-embed
+# embed virtual file systems into an c program
+# - at build time
+# - with zero dependencies
+# - with zero code modifications
+# - with zero clutter in your program
+# author: nicholas mcdonald 2022
 */
-
-#include <stdio.h>
-#include <cstring>
-#include <map>
-#include <iostream>
 
 #ifndef CEMBED
 #define CEMBED
 
-// Macro Iteration / ForEach
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <stdbool.h>
 
-#define FE_0x00(CALLBACK)
-#define FE_0x01(CALLBACK, X)      CALLBACK(X)
-#define FE_0x02(CALLBACK, X, ...) CALLBACK(X)FE_0x01(CALLBACK, __VA_ARGS__)
-#define FE_0x03(CALLBACK, X, ...) CALLBACK(X)FE_0x02(CALLBACK, __VA_ARGS__)
-#define FE_0x04(CALLBACK, X, ...) CALLBACK(X)FE_0x03(CALLBACK, __VA_ARGS__)
-#define FE_0x05(CALLBACK, X, ...) CALLBACK(X)FE_0x04(CALLBACK, __VA_ARGS__)
-#define FE_0x06(CALLBACK, X, ...) CALLBACK(X)FE_0x05(CALLBACK, __VA_ARGS__)
-#define FE_0x07(CALLBACK, X, ...) CALLBACK(X)FE_0x06(CALLBACK, __VA_ARGS__)
-#define FE_0x08(CALLBACK, X, ...) CALLBACK(X)FE_0x07(CALLBACK, __VA_ARGS__)
-#define FE_0x09(CALLBACK, X, ...) CALLBACK(X)FE_0x08(CALLBACK, __VA_ARGS__)
-#define FE_0x0A(CALLBACK, X, ...) CALLBACK(X)FE_0x09(CALLBACK, __VA_ARGS__)
-#define FE_0x0B(CALLBACK, X, ...) CALLBACK(X)FE_0x0A(CALLBACK, __VA_ARGS__)
-#define FE_0x0C(CALLBACK, X, ...) CALLBACK(X)FE_0x0B(CALLBACK, __VA_ARGS__)
-#define FE_0x0D(CALLBACK, X, ...) CALLBACK(X)FE_0x0C(CALLBACK, __VA_ARGS__)
-#define FE_0x0E(CALLBACK, X, ...) CALLBACK(X)FE_0x0D(CALLBACK, __VA_ARGS__)
-#define FE_0x0F(CALLBACK, X, ...) CALLBACK(X)FE_0x0E(CALLBACK, __VA_ARGS__)
-
-#define GET_MACRO(_0,_1,_2,_3,_4,_5,_6,_7,_8,_9,_10,_11,_12,_13,_14,_15,NAME,...) NAME
-#define FOR_EACH(action,...)            \
-  GET_MACRO(_0, __VA_ARGS__,            \
-    FE_0x0F, FE_0x0E, FE_0x0D, FE_0x0C, \
-    FE_0x0B, FE_0x0A, FE_0x09, FE_0x08, \
-    FE_0x07, FE_0x06, FE_0x05, FE_0x04, \
-    FE_0x03, FE_0x02, FE_0x01, FE_0x00) \
-    (action,__VA_ARGS__)
-
-// Extern Symbol Set Definition Macro
-
-#define cembed_start(file)  cembed_##file##_start
-#define cembed_end(file)    cembed_##file##_end
-#define cembed_size(file)   cembed_##file##_size
-
-#define cembed_define(file)       \
-  extern char cembed_start(file); \
-  extern char cembed_end(file);   \
-  extern char cembed_size(file);
-
-// Raw File Pointer Container
+u_int32_t hash(char * key){   // Hash Function: MurmurOAAT64
+  u_int32_t h = 3323198485ul;
+  for (;*key;++key) {
+    h ^= *key;
+    h *= 0x5bd1e995;
+    h ^= h >> 15;
+  }
+  return h;
+}
 
 typedef size_t epos_t;
 
-struct EFILE {
-
-  EFILE(){}
-  EFILE(char* p, char* e, char* s){
-    pos = p; end = e; size = s;
-  };
-
-  char* pos = NULL;
-  char* end = NULL;
-  char* size = NULL;
-  int err = 0;
-
+struct EMAP_S {     // Map Indexing Struct
+  u_int32_t hash;
+  u_int32_t pos;
+  u_int32_t size;
 };
+typedef struct EMAP_S EMAP;
 
-#define cembed_efile(file) EFILE(\
-  &cembed_start(file),     \
-  &cembed_end(file),       \
-  &cembed_size(file)       \
-)
-
-// Embedded File Symbol Creation
-
-#ifdef cembed
-FOR_EACH(cembed_define, cembed)
-#endif
-
-// Embedded File Mapping
-
-#define cembed_tuple(file) { #file, cembed_efile(file) }
-#define cembed_tuple_map_entry(file) cembed_tuple(file),
-
-struct cekeycomp {
-  bool operator () (const char* lhs, const char* rhs)
-    const { return strcmp(lhs, rhs) < 0; }
+struct EFILE_S {    // Virtual File Stream
+  char* pos;
+  char* end;
+  size_t size;
+  int err;
 };
-typedef std::map<const char*, EFILE, cekeycomp> cemap;
-
-static cemap cesym = {
-#ifdef cembed
-FOR_EACH(cembed_tuple_map_entry, cembed)
-#endif
-};
-
-#define cembed_map(file) \
-  cesym.emplace( #file, cembed_efile(file) );
+typedef struct EFILE_S EFILE;
 
 // Error Handling
 
-__thread int eerrcode;
+__thread int eerrcode = 0;
 #define ethrow(err) { (eerrcode = (err)); return NULL; }
 #define eerrno (eerrcode)
 
-#define EERRCODE_NOFILE 0
+#define EERRCODE_SUCCESS 0
+#define EERRCODE_NOFILE 1
+#define EERRCODE_NOMAP 2
+#define EERRCODE_NULLSTREAM 3
+#define EERRCODE_OOBSTREAMPOS 4
 
 const char* eerrstr(int e){
 switch(e){
-  case 0: return "No file found.";
+  case 0: return "Success.";
+  case 1: return "No file found.";
+  case 2: return "Mapping stucture error.";
+  case 3: return "File stream pointer is NULL.";
+  case 4: return "File stream pointer is out-of-bounds.";
   default: return "Unknown cembed error code.";
 };
 };
 
 #define eerror(c) printf("%s: (%u) %s\n", c, eerrcode, eerrstr(eerrcode))
 
-int ferror ( EFILE * stream ){
-  if(stream == NULL) return 0;
-  return stream->err;
-}
+// File Useage
 
-// Point or Underscore Access
+#ifndef CEMBED_BUILD
 
-char* cefile(const char* f){
-  size_t n = strlen(f)+1;
-  char* c = new char[n];
-  for(size_t i = 0; i < n; i++)
-    c[i] = (f[i] == '.' || f[i] == '/')?'_':f[i];
-  return c;
-}
+extern char cembed_map_start; // Embedded Indexing Structure
+extern char cembed_map_end;
+extern char cembed_map_size;
+
+extern char cembed_fs_start;  // Embedded Virtual File System
+extern char cembed_fs_end;
+extern char cembed_fs_size;
 
 EFILE* eopen(const char* file, const char* mode){
-  auto search = cesym.find(cefile(file));
-  if(search == cesym.end())
+
+  EMAP* map = (EMAP*)(&cembed_map_start);
+  const char* end = &cembed_map_end;
+
+  if( map == NULL || end == NULL )
+    ethrow(EERRCODE_NOMAP);
+
+  const u_int32_t key = hash((char*)file);
+  while( ((char*)map != end) && (map->hash != key) )
+    map++;
+
+  if(map->hash != key)
     ethrow(EERRCODE_NOFILE);
-  return &cesym[cefile(file)];
+
+  EFILE* e = (EFILE*)malloc(sizeof *e);
+  e->pos = (&cembed_fs_start + map->pos);
+  e->end = (&cembed_fs_start + map->pos + map->size);
+  e->size = map->size;
+
+  return e;
+
 }
 
-// Actual File Useage
-
-void fclose(EFILE* stream){}
-
-bool feof(EFILE* stream){
-  if(stream == NULL) return false;
-  return (stream->end == stream->pos);
+void eclose(EFILE* e){
+  free(e);
+  e = NULL;
 }
 
-int fgetpos(EFILE* stream, epos_t* pos){
+bool eeof(EFILE* e){
+  if(e == NULL){
+    ethrow(EERRCODE_NULLSTREAM);
+    return true;
+  }
+  if(e->end < e->pos){
+    ethrow(EERRCODE_OOBSTREAMPOS);
+    return true;
+  }
+  return (e->end == e->pos);
+}
 
-  if(stream->end <= stream->pos){
+// REVIEW
+
+int egetpos(EFILE* e, epos_t* pos){
+
+  if(e->end <= e->pos){
     pos = NULL;
     return 1;
   }
 
-  *pos = (epos_t)(stream->end - stream->pos);
+  *pos = (epos_t)(e->end - e->pos);
   return 0;
 
 }
 
-char* fgets ( char* str, int num, EFILE* stream ){
+char* egets ( char* str, int num, EFILE* stream ){
 
-  if(feof(stream))
+  if(eeof(stream))
     return NULL;
 
-  for(int i = 0; i < num && !feof(stream) && *(stream->pos) != '\r'; i++)
+  for(int i = 0; i < num && !eeof(stream) && *(stream->pos) != '\r'; i++)
     str[i] = *(stream->pos++);
 
   return str;
 
 }
 
-#define CEMBED_GETLINE_NBUFCHUNK 128
-
-size_t getline ( char** line, size_t* n, EFILE*& stream ){
-
-  if(stream == NULL)
-    return -1;
-
-  if(feof(stream))
-    return -1;
-
-  *n = CEMBED_GETLINE_NBUFCHUNK;
-  *line = (char*)malloc(CEMBED_GETLINE_NBUFCHUNK);
-
-  size_t i = 0;
-  while(!feof(stream)){
-    (*line)[i++] = *(stream->pos);
-    if(i > *n){
-      *n += CEMBED_GETLINE_NBUFCHUNK;
-      *line = (char*)realloc(*line, *n);
-    }
-    if(*(stream->pos) == '\n'){
-      stream->pos++;
-      break;
-    }
-    stream->pos++;
-  }
-
-  *line = (char*)realloc(*line, i);
-  *n = i;
-  return i;
-
-}
+// Preprocessor Translation
 
 #ifdef CEMBED_TRANSLATE
 #define FILE EFILE
 #define fopen eopen
+#define fclose eclose
+#define feof eeof
+#define fgets egets
+#define perror eerror
+#define getline egetline
 #endif
 
+#endif
 #endif

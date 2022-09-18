@@ -1,22 +1,21 @@
-#================================
-# Splash Execution Mode Makefile
-#================================
+# c-embed build system
 
-#Compiler Settings
-CC = g++ -std=c++11
-DAT = data           #data directory to embed
+# data directory to embed
+DAT = data
 
-CIF = -include /usr/local/include/c-embed.h
+# c-embed configuration clags
+CEF = -include /usr/local/include/c-embed.h -DCEMBED_TRANSLATE
+
+# build rules
 .PHONY: embedded relative
 
-embedded: CF = $(shell c-embed $(DAT)) c-embed.o -DCEMBED_TRANSLATE
+embedded: CF = $(shell c-embed $(DAT)) $(CEF)
 embedded: all
 
 relative: CF =
-relative: CIF =
 relative: all
 
 build:
-	$(CC) main.cpp -o main ${CF} $(CIF)
+	gcc main.c $(CF) -o main
 
 all: build

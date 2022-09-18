@@ -1,95 +1,103 @@
 /*
-  cembed - embed files into a c++ program
-  zero dependencies, zero clutter in your program
-  Author: Nicholas McDonald, 2022
+# c-embed
+# embed virtual file systems into an c program
+# - at build time
+# - with zero dependencies
+# - with zero code modifications
+# - with zero clutter in your program
+# author: nicholas mcdonald 2022
 */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <sys/types.h>
+#define CEMBED_BUILD
+
+#include "c-embed.h"
 #include <dirent.h>
 #include <string.h>
 
-#define DIRENT_FILE 8
-#define DIRENT_DIR 4
-#define MAXPATH 512
+#define CEMBED_FILE "c-embed.o"     // Output File
+#define CEMBED_TMPDIR "cembed_tmp"  // Temporary Directory
 
-int first = 0;
+FILE* ms = NULL;    // Mapping Structure
+FILE* fs = NULL;    // Virtual Filesystem
+FILE* file = NULL;  // Embed Target File Pointer
+u_int32_t pos = 0;  // Current Position
 
-char* sanitize(char* s){
+void cembed(char* filename){
 
-  size_t n = strlen(s)+1;
-  char* ns = (char*)malloc(n);
+  file = fopen(filename, "rb");  // Open the Embed Target File
+  if(file == NULL){
+    printf("Failed to open file %s.", filename);
+    return;
+  }
 
-  for(size_t i = 0; i < n; i++)
-    ns[i] = (s[i] == '.' || s[i] == '/') ? '_' : s[i] ;
-  return ns;
+  fseek(file, 0, SEEK_END);     // Define Map
+  EMAP map = {hash(filename), pos, (u_int32_t)ftell(file)};
+  rewind (file);
+
+  char* buf = malloc(sizeof(char)*(map.size));
+  if(buf == NULL){
+    printf("Memory error for file %s.", filename);
+    return;
+  }
+
+  u_int32_t result = fread(buf, 1, map.size, file);
+  if(result != map.size){
+    printf("Read error for file %s.", filename);
+    return;
+  }
+
+  fwrite(&map, sizeof map, 1, ms);  // Write Mapping Structure
+  fwrite(buf, map.size, 1, fs);     // Write Virtual Filesystem
+
+  free(buf);        // Free Buffer
+  fclose(file);     // Close the File
+  file = NULL;      // Reset the Pointer
+  pos += map.size;  // Shift the Index Position
 
 }
 
-void embed(char* s){
+#define CEMBED_DIRENT_FILE 8
+#define CEMBED_DIRENT_DIR 4
+#define CEMBED_MAXPATH 512
 
-  char* call = (char*)malloc(2*MAXPATH*sizeof(char));
-  char* ns = sanitize(s);
+void iterdir(char* d){
 
-  const char* format = \
-  "objcopy --input binary --output elf64-x86-64 --binary-architecture i386 %s %s.o "\
-  "--redefine-sym _binary_%s_start=cembed_%s_start "\
-  "--redefine-sym _binary_%s_end=cembed_%s_end "\
-  "--redefine-sym _binary_%s_size=cembed_%s_size ";
-
-  int r;
-  r = sprintf(call, format, s, s, ns, ns, ns, ns, ns, ns);
-  system(call);
-  r = sprintf(call, "mv %s.o cembed_tmp/%s.o", s, ns);
-  system(call);
-
-  if(first++ == 0) printf("%s", ns);
-  else printf(",%s", ns);
-
-  free(call);
-  free(ns);
-
-}
-
-void tryiterdir(char* d){
-
-  char* fullpath = (char*)malloc(MAXPATH*sizeof(char));
+  char* fullpath = (char*)malloc(CEMBED_MAXPATH*sizeof(char));
 
   DIR *dir;
   struct dirent *ent;
 
-  if ((dir = opendir (d)) != NULL) {
+  if ((dir = opendir(d)) != NULL) {
 
-    while ((ent = readdir (dir)) != NULL) {
+    while ((ent = readdir(dir)) != NULL) {
 
       if(strcmp(ent->d_name, ".") == 0) continue;
       if(strcmp(ent->d_name, "..") == 0) continue;
 
-      if(ent->d_type == DIRENT_FILE){
+      if(ent->d_type == CEMBED_DIRENT_FILE){
         strcpy(fullpath, d);
         strcat(fullpath, "/");
         strcat(fullpath, ent->d_name);
-        embed(fullpath);
+        cembed(fullpath);
       }
 
-      else if(ent->d_type == DIRENT_DIR){
+      else if(ent->d_type == CEMBED_DIRENT_DIR){
         strcpy(fullpath, d);
         strcat(fullpath, "/");
         strcat(fullpath, ent->d_name);
-        tryiterdir(fullpath);
+        iterdir(fullpath);
       }
 
     }
 
-    closedir (dir);
+    closedir(dir);
 
   }
 
   else {
 
     strcpy(fullpath, d);
-    embed(fullpath);
+    cembed(fullpath);
 
   }
 
@@ -99,18 +107,61 @@ void tryiterdir(char* d){
 
 int main(int argc, char* argv[]){
 
+  char fmt[CEMBED_MAXPATH];
+
   if(argc <= 1)
     return 0;
 
-  system("if [ ! -d cembed_tmp ]; then mkdir cembed_tmp; fi;");
-  printf("-Dcembed=");
+  sprintf(fmt, "if [ ! -d %s ]; then mkdir %s; fi;", CEMBED_TMPDIR, CEMBED_TMPDIR);
+  system(fmt);
+
+  // Build the Mapping Structure and Virtual File System
+
+  ms = fopen("cembed.map", "wb");
+  fs = fopen("cembed.fs", "wb");
+
+  if(ms == NULL || fs == NULL){
+    printf("Failed to initialize map and filesystem. Check permissions.");
+    return 0;
+  }
 
   for(int i = 1; i < argc; i++)
-    tryiterdir(argv[i]);
+    iterdir(argv[i]);
 
-  system("ld -relocatable cembed_tmp/*.o -o c-embed.o");
-  system("rm -rf cembed_tmp");
-  printf("\n");
+  fclose(ms);
+  fclose(fs);
+
+  // Convert to Embeddable Symbols
+
+  system( "objcopy --input binary --output elf64-x86-64 --binary-architecture i386 "\
+          "--redefine-sym _binary_cembed_map_start=cembed_map_start "\
+          "--redefine-sym _binary_cembed_map_end=cembed_map_end "\
+          "--redefine-sym _binary_cembed_map_size=cembed_map_size "\
+          "cembed.map cembed.map.o"
+        );
+
+  sprintf(fmt, "mv cembed.map.o %s/cembed.map.o", CEMBED_TMPDIR);
+  system(fmt);
+  system("rm cembed.map");
+
+  system( "objcopy --input binary --output elf64-x86-64 --binary-architecture i386 "\
+          "--redefine-sym _binary_cembed_fs_start=cembed_fs_start "\
+          "--redefine-sym _binary_cembed_fs_end=cembed_fs_end "\
+          "--redefine-sym _binary_cembed_fs_size=cembed_fs_size "\
+          "cembed.fs cembed.fs.o "
+        );
+
+  sprintf(fmt, "mv cembed.fs.o %s/cembed.fs.o", CEMBED_TMPDIR);
+  system(fmt);
+  system("rm cembed.fs");
+
+  sprintf(fmt, "ld -relocatable cembed_tmp/*.o -o %s", CEMBED_FILE);
+  system(fmt);
+
+  sprintf(fmt, "rm -rf %s", CEMBED_TMPDIR);
+  system(fmt);
+
+  printf("%s", CEMBED_FILE);
 
   return 0;
 

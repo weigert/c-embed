@@ -1,69 +1,65 @@
 # c-embed
 
-Embed read-only filesystems into any C++11 program w. a single header, zero dependencies and zero modifications to your code.
+naturally embed read-only file/filesystem snapshots into any C99 program w. a single header, **zero dependencies** and **zero modifications** to your code at build time.
 
-## Usage
+works with `C99` to `C++20` compilers
 
-`c-embed` allows you to embed static, read-only snapshots of full filesystems into your C++ executable with almost zero effort. It provides a natural `stdio.h` style interface to retrieve and process data.
+## usage
 
-`c-embed` is extremely easy to use and integrate into your project:
+`c-embed` allows you to embed static, read-only snapshots of full filesystems into your C executable with almost zero effort.
 
-    #include <stdio.h>
-    //...
-    FILE * pFile = fopen ("myfile.txt" , "r");
+`c-embed` builds an object file containing the static file system image using the embedder binary `c-embed`, which outputs the name of the embedded filesystem file (default: `c-embed.o`):
 
-becomes
+    c-embed myfile.txt <dir/file> <dir/file> ...
+    > c-embed.o
 
-    #include <stdio.h>
+*Note: Specifying a directory will recursively add all files (including in subdirectories) to the virtual file system.*
+
+The single `c-embed.h` header exposes `stdio.h` style interface for accessing the embedded file system, which you simply link as an object file:
+
+    /* main.c */
+
     #include <cembed.h>
-    //...
-    EFILE * pFile = eopen ("myfile.txt" , "r");
 
-All other `<stdio.h>` functions can then operate on the `EFILE*` pointer normally.
+    int main(){
 
-To facilitate this, `c-embed` requires a minor modification to your build process.
+      EFILE * pFile = eopen ("myfile.txt" , "r");
 
-### Build Process Modification
+      //...
 
-To make a static file system available to c-embed, we simply run the embedder binary `c-embed` (see below):
+      eclose(pFile);
+      return 0;
 
-    c-embed <dir/file> <dir/file> <dir/file> ...
+    }
 
-which outputs an object file `c-embed.o`, which represents a snapshot of our file system with all files and directories built into it.
+**build**
 
-Additionally, it prints a `#define` compiler flag to the console which needs to be passed to your compiler in order to make the files visible through the `<cembed.h>` header. Something like:
+    gcc main.c c-embed.o -o main
 
-    -Dcembed=file1,file2,file3,...
+*Note: All files in the virtual filesystem are located relative to the working directory where the `c-embed` binary is executed.*
 
-To finally provide the filesystem in your project, we build with the filesystem object file and with the compiler flag:
+### building / installation
 
-    g++ -std=c++11 main.cpp -o main c-embed.o -Dcembed=file1,...
+Build the `c-embed` executble and install the single header:
 
-#### Integration in Make
+    sudo make all
 
-We can modify a makefile very simply to do this for us:
+### c-embed stdio.h interface
 
-    CC = g++ -std=c++11
-    DAT = data           #data directory to embed
+The `stdio.h` style interface for virtual filesystems implemented in `c-embed` contains the following:
 
-    .PHONY: embedded
-    embedded: CF = $(shell c-embed $(DAT)) c-embed.o
-    embedded: all
+    EFILE - embedded file pointer
+    eopen - open embedded file
+    eclose - close embedded file pointer
+    eeof - end of file check
+    egets - get string util eof or new line
+    eerror - prints a descriptive error
 
-    build:
-      $(CC) main.cpp -o main ${CF}
+in full analogy to their regular [`stdio.h` counterparts](https://cplusplus.com/reference/cstdio/).
 
-    all: build
+### zero-modification embedding
 
-Running `make all` then build the system with a relative file system, while `make embedded` builds it with `data` embedded as a static file system. Note that we still require the `EFILE*` and `eopen` accessors in this case.
-
-#### Zero-Mod Accessors
-
-If you additionally define the macro `CEMBED_TRANSLATE`, then all occurences of `FILE` are replaced with `EFILE` and all occurences of `fopen` become `eopen`. This should be done stably after including of all `<stdio.h>` headers.
-
-This effectively makes the system fully translated and moves the entire embedding to the build process.
-
-The following code:
+If you use `stdio.h` for your filesystem-io, then your code requires **zero** modifications to use `c-embed` for embedding virtual file system snapshots. To facilitate this, `c-embed` only requires a minor modification to your build process:
 
     #include <stdio.h>
 
@@ -83,57 +79,40 @@ The following code:
 
     }
 
-with the following makefile:
+Makefile - build with live file system:
 
-    CC = g++ -std=c++11
-    DAT = data           #data directory to embed
+    all:
+      gcc main.c -o main
 
-    CIF = -include /usr/local/include/c-embed.h
-    .PHONY: embedded relative
+Makefile - build with  embedded virtual file system:
 
-    embedded: CF = $(shell c-embed $(DAT)) c-embed.o -DCEMBED_TRANSLATE
-    embedded: all
+    DAT = data_path_1 data_path_2 # files to embed
+    CEF = -DCEMBED_TRANSLATE -include /usr/local/include/c-embed.h
 
-    relative: CF =
-    relative: CIF =
-    relative: all
+    all:
+      gcc main.c $(shell c-embed $(DAT)) $(CEF) -o main
 
-    build:
-    	$(CC) main.cpp -o main ${CF} $(CIF)
+This allows for seamless transitioning between development and deployment builds without needing to modify the code at all.
 
-    all: build
+*Note: The `CEMBED_TRANSLATE` preprocessor definition translates the `stdio.h` interface into the `c-embed` interface.*
 
-Can be built once using `make relative` to run the system with a relative file system, and `make embedded` to generate the binary with an embedded file system. See `/example/` for a working example and try it out yourself!
+## how it works
 
-#### Other Details
+The `c-embed` binary builds two files, containing a filesystem indexing structure and a concatenation of the files we wish to embed.
 
-Note that the paths of all files and directories are accessible in your C++ code via the relative path from where `c-embed` was executed.
+The indexing structure uses a simple hash function to turn path strings into keys and store positions of binary data in the concatenated filesystem file.
+
+The binary then uses `objcopy` to turn these two files into accessible objects, which we can easily link with our main executable and access via defined symbols.
+
+The `c-embed.h` header then includes these symbols (one set of symbols for the indexing structure, one set for the file system) and implements the `stdio.h` style interface to interpret the data and access the embedded files.
+
+### other details
 
 The filesystem remains static in the object file, meaning that the file system need not exist as long as `c-embed.o` exists.
 
-Additionally, you can generate a static file system in one place and copy the `c-embed.o` file somewhere else and still have accessors given by the relative paths from the place where it was embedded.
+You can generate a static file system in one place and copy the `c-embed.o` file somewhere else and still have accessors given by the relative paths from the place where it was embedded.
 
-### Building / Installation
-
-Build and Install c-embed:
-
-    sudo make all
-
-#### Details
-
-c-embed consists of a single encoding binary `cembed` and a single header file `cembed.h`. To build the program, run:
-
-    # build embedder
-    gcc c-embed.c -o c-embed
-
-    # alternatively: make
-    make build
-
-The c-embed binary and header can be installed using the makefile (with privilege):
-
-    sudo make install
-
-You can change the install and include directories in the makefile (or just do it yourself, it's like 2 lines).
+The `c-embed.o` file represents the filesystem snapshot, and compiling your executable by linking this file embeds the snapshot.
 
 ## Motivation
 
@@ -163,11 +142,9 @@ Both of these solutions require modification / cluttering of your code with addi
 
 ### Solution
 
-The goal of this tiny, single-header library is to leverage the c++ preprocessor to move the entire file system configuration to the build process and out of your code.
+The goal of this tiny, single-header library is to leverage the c preprocessor to move the entire file system configuration to the build process and out of your code.
 
-The `c-embed` binary uses objcopy to generate a single object file containing the relevant symbols for accessing the hex-encoded data.
-
-The preprocessor then utilizes the passed `-Dcembed` definition to extract the symbols and make them accessible through a map.
+The `c-embed` binary uses objcopy to generate a single object file containing the relevant symbols for accessing the binary-encoded data.
 
 Finally, an abstract `stdio.h` style interface is provided for retrieving the data with proper error handling.
 
@@ -183,9 +160,7 @@ Additionally, because filesystem accesor tokens `/` and `.` are not valid identi
 
 ## Future Work
 
-instead of requiring the c++ preprocessor to expand the set of defined file macros, which does not allow for looping and thus limits the total number of embeddable files, we could instead additionally embed a single globally available indexing structure which could be used for generating accessors instead.
-
-Additionally, it would be interesting to consider if the file system could be made (temporarily) writeable in RAM. But this is beyond the purpose of this library.
+It would be interesting to consider if the file system could be made (temporarily) writeable in RAM. But this is beyond the purpose of this library.
 
 ## License
 

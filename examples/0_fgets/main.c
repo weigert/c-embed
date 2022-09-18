@@ -2,9 +2,9 @@
 
 int main(int argc, char* args[]){
 
-  FILE* eFile = fopen("data/data.txt", "r");
+  FILE* eFile = fopen("data/data2/data2.txt", "r");
 
-  char buffer [100]{' '};
+  char buffer [100] = {' '};
 
   if (eFile == NULL)
     perror ("Error opening file");
@@ -13,5 +13,7 @@ int main(int argc, char* args[]){
     if( fgets(buffer, 100, eFile) == NULL ) break;
     fputs (buffer , stdout);
   }
+
+  fclose(eFile);
 
 }
