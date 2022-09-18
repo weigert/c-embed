@@ -162,8 +162,9 @@ Files stay as the files which they are, and can thus be manipulated appropriatel
 It would be interesting to consider if the file system could be made (temporarily) writeable in RAM. But this is beyond the purpose of this library.
 
 Other necessary improvements include:
-- active hash collision detection during embedding!
+- active hash collision detection during embedding
 - somehow make it possible to link multiple file systems simultaneously
+- add an embed file inspection tool (this requires including metadata in the future)
 
 ## License
 
