@@ -14,8 +14,9 @@
 #include <dirent.h>
 #include <string.h>
 
-#define CEMBED_FILE "c-embed.o"     // Output File
-#define CEMBED_TMPDIR "cembed_tmp"  // Temporary Directory
+#define CEMBED_FILE "c-embed.o"       // Output File
+#define CEMBED_TMPDIR "cembed_tmp"    // Temporary Directory
+#define CEMBED_ARCH "elf64-x86-64"    // Target Architecture
 
 FILE* ms = NULL;    // Mapping Structure
 FILE* fs = NULL;    // Virtual Filesystem
@@ -133,23 +134,23 @@ int main(int argc, char* argv[]){
 
   // Convert to Embeddable Symbols
 
-  system( "objcopy --input binary --output elf64-x86-64 --binary-architecture i386 "\
+  sprintf(fmt, "objcopy -I binary -O %s "\
           "--redefine-sym _binary_cembed_map_start=cembed_map_start "\
           "--redefine-sym _binary_cembed_map_end=cembed_map_end "\
           "--redefine-sym _binary_cembed_map_size=cembed_map_size "\
-          "cembed.map cembed.map.o"
-        );
+          "cembed.map cembed.map.o", CEMBED_ARCH);
+  system(fmt);
 
   sprintf(fmt, "mv cembed.map.o %s/cembed.map.o", CEMBED_TMPDIR);
   system(fmt);
   system("rm cembed.map");
 
-  system( "objcopy --input binary --output elf64-x86-64 --binary-architecture i386 "\
+  sprintf(fmt, "objcopy -I binary -O %s "\
           "--redefine-sym _binary_cembed_fs_start=cembed_fs_start "\
           "--redefine-sym _binary_cembed_fs_end=cembed_fs_end "\
           "--redefine-sym _binary_cembed_fs_size=cembed_fs_size "\
-          "cembed.fs cembed.fs.o "
-        );
+          "cembed.fs cembed.fs.o", CEMBED_ARCH);
+  system(fmt);
 
   sprintf(fmt, "mv cembed.fs.o %s/cembed.fs.o", CEMBED_TMPDIR);
   system(fmt);

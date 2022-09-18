@@ -53,7 +53,12 @@ The `stdio.h` style interface for virtual filesystems implemented in `c-embed` c
     eclose - close embedded file pointer
     eeof - end of file check
     egets - get string util eof or new line
+    egetc - get current stream char promoted to int
     eerror - prints a descriptive error
+    eread - read to memory address
+    eseek - seek a position in the file
+    etell - get the position in the file
+    rewind - reset the position to the start of the file
 
 in full analogy to their regular [`stdio.h` counterparts](https://cplusplus.com/reference/cstdio/).
 
@@ -161,6 +166,10 @@ Additionally, because filesystem accesor tokens `/` and `.` are not valid identi
 ## Future Work
 
 It would be interesting to consider if the file system could be made (temporarily) writeable in RAM. But this is beyond the purpose of this library.
+
+Other necessary improvements include:
+- active hash collision detection during embedding!
+- somehow make it possible to link multiple file systems simultaneously
 
 ## License
 
