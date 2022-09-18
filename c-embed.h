@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <stdbool.h>
+#include <string.h>
 
 u_int32_t hash(char * key){   // Hash Function: MurmurOAAT64
   u_int32_t h = 3323198485ul;
@@ -111,17 +112,33 @@ void eclose(EFILE* e){
 
 bool eeof(EFILE* e){
   if(e == NULL){
-    ethrow(EERRCODE_NULLSTREAM);
+    (eerrcode = (EERRCODE_NULLSTREAM));
     return true;
   }
   if(e->end < e->pos){
-    ethrow(EERRCODE_OOBSTREAMPOS);
+    (eerrcode = (EERRCODE_OOBSTREAMPOS));
+    return true;
+  }
+  if((e->end - e->pos) - e->size < 0){
+    (eerrcode = (EERRCODE_OOBSTREAMPOS));
     return true;
   }
   return (e->end == e->pos);
 }
 
-// REVIEW
+size_t eread(void* ptr, size_t size, size_t count, EFILE* stream){
+
+  if(stream->end - stream->pos < size*count){
+    size_t scount = stream->end - stream->pos;
+    memcpy(ptr, (void*)stream->pos, scount);
+    stream->pos = stream->end;
+    return (scount/size);
+  }
+
+  memcpy(ptr, (void*)stream->pos, size*count);
+  return count;
+
+}
 
 int egetpos(EFILE* e, epos_t* pos){
 
@@ -147,6 +164,38 @@ char* egets ( char* str, int num, EFILE* stream ){
 
 }
 
+int egetc ( EFILE* stream ){
+  if(eeof(stream))
+    return -1;
+  return (int)(*(stream->pos++));
+}
+
+long int etell(EFILE* e){
+  return (e->end - e->pos) - e->size;
+}
+
+void rewind(EFILE* e){
+  e->pos = (e->end - e->size);
+}
+
+int eseek ( EFILE* stream, long int offset, int origin ){
+
+  if(origin == SEEK_SET)
+    stream->pos = stream->end - stream->size + offset;
+  if(origin == SEEK_CUR)
+    stream->pos += offset;
+  if(origin == SEEK_END)
+    stream->pos = stream->end + offset;
+
+  if(stream->end < stream->pos || etell(stream)  < 0){
+    (eerrcode = (EERRCODE_OOBSTREAMPOS));
+    return true;
+  }
+
+  return 0;
+
+}
+
 // Preprocessor Translation
 
 #ifdef CEMBED_TRANSLATE
@@ -155,8 +204,11 @@ char* egets ( char* str, int num, EFILE* stream ){
 #define fclose eclose
 #define feof eeof
 #define fgets egets
+#define fgetc egetc
 #define perror eerror
-#define getline egetline
+#define fread eread
+#define fseek eseek
+#define ftell etell
 #endif
 
 #endif
