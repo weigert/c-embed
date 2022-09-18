@@ -2,6 +2,8 @@
 
 naturally embed read-only files/filesystems into any c++11 program w. a single header, zero dependencies and zero modifications to your code.
 
+Works from C99 to C++20
+
 ## Usage
 
 `c-embed` allows you to embed static, read-only snapshots of full filesystems into your C++ executable with almost zero effort. It provides a natural `stdio.h` style interface to retrieve and process data.
